@@ -8,15 +8,22 @@ from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error
 import joblib
+import pickle
 
 def load_data(file_path):
+    """
+    Загружает данные из файла или URL.
+
+    :param file_path: Путь к файлу или URL.
+    :return: DataFrame с загруженными данными или None в случае ошибки.
+    """
     try:
         if file_path.startswith("http://") or file_path.startswith("https://"):
-            # Работа с URL
+            # Если путь является URL
             response = requests.get(file_path)
             response.raise_for_status()
 
-            # Временный файл для хранения данных
+            # Создаем временный файл для хранения данных
             ext = ".csv" if ".csv" in file_path else ".xlsx"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
             tmp.write(response.content)
@@ -24,7 +31,7 @@ def load_data(file_path):
 
             file_path = tmp.name
 
-        # Загрузка из файла
+        # Загрузка данных из файла
         if file_path.endswith('.csv'):
             df = pd.read_csv(file_path)
         elif file_path.endswith(('.xls', '.xlsx')):
@@ -39,6 +46,13 @@ def load_data(file_path):
         return None
 
 def preprocess_data(df, target_column):
+    """
+    Предобрабатывает данные: удаляет NaN, кодирует категориальные признаки и нормализует числовые.
+
+    :param df: DataFrame с исходными данными.
+    :param target_column: Название целевого столбца.
+    :return: DataFrame с предобработанными данными.
+    """
     df = df.dropna(axis=0).copy()  # Удаляем строки с NaN и избегаем SettingWithCopyWarning
 
     # Отдельно сохраняем целевой столбец
@@ -57,14 +71,20 @@ def preprocess_data(df, target_column):
     df_processed = pd.concat([features, target.reset_index(drop=True)], axis=1)
     return df_processed
 
-
 def infer_target_column(df, task_type=None):
+    """
+    Определяет целевой столбец на основе типа задачи или предположений.
+
+    :param df: DataFrame с данными.
+    :param task_type: Тип задачи ('classification' или 'regression').
+    :return: Название целевого столбца или None, если не удалось определить.
+    """
     if task_type == "classification":
-        # Для классификации выбираем категориальный столбец (например, с числовыми значениями, ограниченными 2-20 уникальными)
+        # Для классификации выбираем категориальный столбец или числовой с небольшим числом уникальных значений
         for col in df.select_dtypes(include=['object']).columns:
             return col
         for col in df.select_dtypes(include=['int64', 'float64']).columns:
-            if df[col].nunique() <= 20:  # Для классификации с небольшим числом уникальных значений
+            if df[col].nunique() <= 20:
                 return col
 
     elif task_type == "regression":
@@ -81,8 +101,14 @@ def infer_target_column(df, task_type=None):
 
     return None  # Если не удалось выбрать целевой столбец
 
-
 def infer_task_type(df, target_column):
+    """
+    Определяет тип задачи на основе целевого столбца.
+
+    :param df: DataFrame с данными.
+    :param target_column: Название целевого столбца.
+    :return: Тип задачи ('classification', 'regression' или 'clustering').
+    """
     if target_column is None or target_column not in df.columns:
         return "clustering"
 
@@ -97,6 +123,12 @@ def infer_task_type(df, target_column):
         raise ValueError("Не удалось определить тип задачи")
 
 def select_model(task_type):
+    """
+    Выбирает модель в зависимости от типа задачи.
+
+    :param task_type: Тип задачи ('classification', 'regression' или 'clustering').
+    :return: Модель для задачи.
+    """
     if task_type == "classification":
         return RandomForestClassifier(n_estimators=100)
     elif task_type == "regression":
@@ -107,6 +139,14 @@ def select_model(task_type):
         raise ValueError("Неподдерживаемая задача")
 
 def train_and_evaluate(df, target_column, task_type):
+    """
+    Обучает модель и оценивает её качество.
+
+    :param df: DataFrame с данными.
+    :param target_column: Название целевого столбца.
+    :param task_type: Тип задачи ('classification' или 'regression').
+    :return: Обученная модель и метрика качества.
+    """
     df = df.dropna(subset=[target_column])
     X = df.drop(columns=[target_column])
     y = df[target_column]
@@ -127,8 +167,21 @@ def train_and_evaluate(df, target_column, task_type):
 
     return model, metric
 
-def save_model(model, filename="model.pkl"):
-    joblib.dump(model, filename)
+def save_model(model, filename="model", format="joblib"):
+    """
+    Сохраняет обученную модель в файл в выбранном формате.
+
+    :param model: Обученная модель.
+    :param filename: Имя файла для сохранения модели.
+    :param format: Формат сохранения модели ('pkl', 'joblib').
+    """
+    if format == "pkl":
+        with open(f"{filename}.pkl", "wb") as f:
+            pickle.dump(model, f)
+    elif format == "joblib":
+        joblib.dump(model, f"{filename}.joblib")
+    else:
+        raise ValueError("Неподдерживаемый формат сохранения модели")
 
 if __name__ == "__main__":
     # Пример URL-датасета
@@ -138,7 +191,7 @@ if __name__ == "__main__":
 
     if df is not None:
         print("Data loaded:\n", df.head())
-        
+
         # Автоматически определяем целевой столбец
         target_column = infer_target_column(df)
         print(f"Target column detected: {target_column}")
@@ -168,6 +221,7 @@ if __name__ == "__main__":
             model.fit(df)
             print("Clustering completed.")
 
-        # Сохранение модели
-        save_model(model)
-        print("Model saved as model.pkl")
+        # Сохранение модели в выбранном формате
+        save_format = "joblib"  
+        save_model(model, format=save_format)
+        print(f"Model saved as model.{save_format}")
