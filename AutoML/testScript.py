@@ -2,6 +2,8 @@ import pandas as pd
 import requests
 import tempfile
 import os
+import argparse
+import logging
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.cluster import KMeans
@@ -9,6 +11,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error
 import joblib
 import pickle
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_data(file_path):
     """
@@ -39,10 +44,11 @@ def load_data(file_path):
         else:
             raise ValueError("Неверный формат файла")
 
+        logging.info("Данные были загружены успешно.")
         return df
 
     except Exception as e:
-        print(f"Ошибка при загрузке данных: {e}")
+        logging.error(f"Ошибка при загрузке данных: {e}")
         return None
 
 def preprocess_data(df, target_column):
@@ -69,6 +75,7 @@ def preprocess_data(df, target_column):
 
     # Объединяем обратно признаки и целевую переменную
     df_processed = pd.concat([features, target.reset_index(drop=True)], axis=1)
+    logging.info("Данные успешно обработаны.")
     return df_processed
 
 def infer_target_column(df, task_type=None):
@@ -99,6 +106,7 @@ def infer_target_column(df, task_type=None):
         elif df[col].dtype in ['int64', 'float64'] and df[col].nunique() > 20:
             return col  # Возвращаем первый числовой столбец для регрессии
 
+    logging.warning("Не удалось вывести целевой столбец")
     return None  # Если не удалось выбрать целевой столбец
 
 def infer_task_type(df, target_column):
@@ -122,29 +130,33 @@ def infer_task_type(df, target_column):
     else:
         raise ValueError("Не удалось определить тип задачи")
 
-def select_model(task_type):
+def select_model(task_type, n_estimators=100, n_clusters=3):
     """
     Выбирает модель в зависимости от типа задачи.
 
     :param task_type: Тип задачи ('classification', 'regression' или 'clustering').
+    :param n_estimators: Количество деревьев для RandomForest.
+    :param n_clusters: Количество кластеров для KMeans.
     :return: Модель для задачи.
     """
     if task_type == "classification":
-        return RandomForestClassifier(n_estimators=100)
+        return RandomForestClassifier(n_estimators=n_estimators)
     elif task_type == "regression":
-        return RandomForestRegressor(n_estimators=100)
+        return RandomForestRegressor(n_estimators=n_estimators)
     elif task_type == "clustering":
-        return KMeans(n_clusters=3)
+        return KMeans(n_clusters=n_clusters)
     else:
         raise ValueError("Неподдерживаемая задача")
 
-def train_and_evaluate(df, target_column, task_type):
+def train_and_evaluate(df, target_column, task_type, n_estimators=100, n_clusters=3):
     """
     Обучает модель и оценивает её качество.
 
     :param df: DataFrame с данными.
     :param target_column: Название целевого столбца.
     :param task_type: Тип задачи ('classification' или 'regression').
+    :param n_estimators: Количество деревьев для RandomForest.
+    :param n_clusters: Количество кластеров для KMeans.
     :return: Обученная модель и метрика качества.
     """
     df = df.dropna(subset=[target_column])
@@ -153,7 +165,7 @@ def train_and_evaluate(df, target_column, task_type):
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
-    model = select_model(task_type)
+    model = select_model(task_type, n_estimators, n_clusters)
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_test)
@@ -165,6 +177,7 @@ def train_and_evaluate(df, target_column, task_type):
     else:
         metric = None
 
+    logging.info(f"Модель обучена и оценена. Метрики: {metric}")
     return model, metric
 
 def save_model(model, filename="model", format="joblib"):
@@ -182,46 +195,54 @@ def save_model(model, filename="model", format="joblib"):
         joblib.dump(model, f"{filename}.joblib")
     else:
         raise ValueError("Неподдерживаемый формат сохранения модели")
+    logging.info(f"Модель сохранена как {filename}.{format}")
 
-if __name__ == "__main__":
-    # Пример URL-датасета
-    data_source = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
-
+def main(data_source, save_format, n_estimators, n_clusters):
     df = load_data(data_source)
 
     if df is not None:
-        print("Data loaded:\n", df.head())
+        logging.info("Данные загружены:\n" + str(df.head()))
 
         # Автоматически определяем целевой столбец
         target_column = infer_target_column(df)
-        print(f"Target column detected: {target_column}")
+        logging.info(f"Обнаружен целевой столбец: {target_column}")
 
         # Определяем тип задачи
         task_type = infer_task_type(df, target_column)
-        print(f"Task type detected: {task_type}")
+        logging.info(f"Тип задачи обнаружен: {task_type}")
 
         # Выводим дополнительные данные о целевой переменной
         if target_column:
             unique_values = df[target_column].nunique()  # Количество уникальных значений
-            print("Task type automatically detected:", task_type)
-            print("Unique values in the target variable:", unique_values)
-            print("Target Variable Type:", df[target_column].dtype)
+            logging.info("Тип задачи определён автоматически: " + task_type)
+            logging.info("Уникальные значения в целевой переменной: " + str(unique_values))
+            logging.info("Тип целевой переменной: " + str(df[target_column].dtype))
 
             # Предобработка данных
             df = preprocess_data(df, target_column)
-            print("Data after preprocessing:\n", df.head())
+            logging.info("Данные после предварительной обработки:\n" + str(df.head()))
 
             # Обучение и оценка модели
-            model, metric = train_and_evaluate(df, target_column, task_type)
-            print(f"Model metric: {metric}")
+            model, metric = train_and_evaluate(df, target_column, task_type, n_estimators, n_clusters)
+            logging.info(f"Метрики модели {metric}")
         else:
             # Если целевая переменная не найдена, выполняем кластеризацию
             df = preprocess_data(df, df.columns[-1])
-            model = select_model(task_type)
+            model = select_model(task_type, n_estimators, n_clusters)
             model.fit(df)
-            print("Clustering completed.")
+            logging.info("Кластеризация завершена.")
 
         # Сохранение модели в выбранном формате
-        save_format = "joblib"  
         save_model(model, format=save_format)
-        print(f"Model saved as model.{save_format}")
+        logging.info(f"Модель сохранена как model.{save_format}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="AutoML Script")
+    parser.add_argument("--data_source", type=str, default="https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv", help="URL or path to the dataset")
+    parser.add_argument("--save_format", type=str, choices=["pkl", "joblib"], default="joblib", help="Format to save the model")
+    parser.add_argument("--n_estimators", type=int, default=100, help="Number of trees in the RandomForest")
+    parser.add_argument("--n_clusters", type=int, default=3, help="Number of clusters for KMeans")
+
+    args = parser.parse_args()
+
+    main(args.data_source, args.save_format, args.n_estimators, args.n_clusters)
