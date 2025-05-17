@@ -1,7 +1,7 @@
 """Модуль с вспомогательными функциями для api"""
 from jose import jwt
 from datetime import datetime, timedelta, timezone
-from AutoML.database.config import settings
+from database.config import settings
 
 
 def create_access_token(data: dict) -> str:

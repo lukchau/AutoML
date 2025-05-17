@@ -17,7 +17,7 @@ class Settings:
     @property
     def DATA_BASE_AUTH_URL(self) -> str:
         """Метод для возвращения ссылки для подключения к БД"""
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.HOST}:{self.POSTGRES_PORT}/db"
-
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@db:{self.POSTGRES_PORT}/db"
+        # для запуска в докере хост ставить db для тестов localhost
 
 settings = Settings()

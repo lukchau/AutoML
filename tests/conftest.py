@@ -5,10 +5,10 @@ from _pytest.fixtures import SubRequest
 from pytest_asyncio import fixture
 from pytest import mark
 from sqlalchemy import select
-from AutoML.database.model import User as UserDB
-from AutoML.database.database import session
-from AutoML.database.user_orm import Auth_obj
-from AutoML.schemas.user import User
+from database.model import User as UserDB
+from database.database import session
+from database.user_orm import Auth_obj
+from schemas.user import User
 
 
 @fixture(scope="session")

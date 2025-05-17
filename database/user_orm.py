@@ -1,11 +1,11 @@
 """Модуль содержит класс с методами для работы с сущностью "Пользователь" в БД"""
-from helpers import get_password_hash, verify_password
+from .helpers import get_password_hash, verify_password
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
-from database import session
+from .database import session
 from sqlalchemy import select
-from model import User
-from AutoML.schemas.user import User as UserModel
+from .model import User
+from schemas.user import User as UserModel
 from fastapi import HTTPException
 
 
@@ -31,7 +31,7 @@ class Auth_obj:
 
             except Exception as e:
                 await conn.rollback()
-                raise HTTPException(500, "Database error")
+                raise HTTPException(500, detail=e)
 
     @staticmethod
     async def authenticate(email: str, password: str) -> int | HTTPException:

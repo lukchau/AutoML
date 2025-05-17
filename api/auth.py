@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Response, Cookie, HTTPException
-from AutoML.database.user_orm import Auth_obj
-from AutoML.schemas.user import User, UserJWT
+from database.user_orm import Auth_obj
+from schemas.user import User, UserJWT
 from fastapi.responses import JSONResponse
-from helpers import create_access_token, decode_access_token
+from .helpers import create_access_token, decode_access_token
 
 router = APIRouter(prefix='/users', tags=['Authentication'])
 

@@ -32,10 +32,8 @@ async def train_model(
     request: Request,
     token: str = Cookie(None, alias="users_access_token"),
 ):
+    """Обучает модель на основе загруженного датасета.
     """
-    Обучает модель на основе загруженного датасета.
-    """
-
     # Проверка токена 
     if not token:
         raise HTTPException(status_code=401, detail="Пользователь не авторизован")

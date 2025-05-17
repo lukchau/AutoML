@@ -1,12 +1,12 @@
 from sqlalchemy import select
 from pytest import mark, param
-from AutoML.database.user_orm import Auth_obj
-from AutoML.database.helpers import verify_password
-from AutoML.schemas.user import User, UserJWT
-from AutoML.database.model import User as UserDB
-from AutoML.database.database import session
+from database.user_orm import Auth_obj
+from database.helpers import verify_password
+from schemas.user import User, UserJWT
+from database.model import User as UserDB
+from database.database import session
 import requests
-from AutoML.api.helpers import decode_access_token
+from api.helpers import decode_access_token
 
 
 class TestAuthentication:
