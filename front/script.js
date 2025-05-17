@@ -153,7 +153,7 @@ document.getElementById('modelSelectionForm')?.addEventListener('submit', async 
     
     const task = document.getElementById('task').value;
 
-    const result = await sendData('/api/train', { task });
+    const result = await sendData('/model/train', { task });
 
     if (result.success) {
         window.location.href = 'results.html'; // Переход на страницу результатов

@@ -2,7 +2,6 @@ import pandas as pd
 import requests
 import tempfile
 import os
-import argparse
 import logging
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -15,10 +14,34 @@ import pickle
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
+def validate_data(df: pd.DataFrame, target_column: str):
+    """
+    Выполняет базовые проверки качества данных.
+    :param df: DataFrame с данными.
+    :param target_column: Целевая переменная.
+    :raises ValueError: Если данные не проходят валидацию.
+    """
+    if df.empty:
+        raise ValueError("Датасет пуст.")
+
+    if target_column not in df.columns:
+        raise ValueError(f"Целевой столбец '{target_column}' отсутствует в данных.")
+
+    if df.shape[1] < 2:
+        raise ValueError("Недостаточно признаков для обучения модели.")
+
+    unique_target_values = df[target_column].nunique()
+
+    if unique_target_values < 2:
+        raise ValueError(f"Целевая переменная содержит только одно уникальное значение: {df[target_column].iloc[0]}")
+
+    logging.info(f"Валидация успешна. Уникальных значений в таргете: {unique_target_values}")
+
+
 def load_data(file_path):
     """
     Загружает данные из файла или URL.
-
     :param file_path: Путь к файлу или URL.
     :return: DataFrame с загруженными данными или None в случае ошибки.
     """
@@ -51,10 +74,10 @@ def load_data(file_path):
         logging.error(f"Ошибка при загрузке данных: {e}")
         return None
 
+
 def preprocess_data(df, target_column):
     """
     Предобрабатывает данные: удаляет NaN, кодирует категориальные признаки и нормализует числовые.
-
     :param df: DataFrame с исходными данными.
     :param target_column: Название целевого столбца.
     :return: DataFrame с предобработанными данными.
@@ -78,10 +101,10 @@ def preprocess_data(df, target_column):
     logging.info("Данные успешно обработаны.")
     return df_processed
 
+
 def infer_target_column(df, task_type=None):
     """
     Определяет целевой столбец на основе типа задачи или предположений.
-
     :param df: DataFrame с данными.
     :param task_type: Тип задачи ('classification' или 'regression').
     :return: Название целевого столбца или None, если не удалось определить.
@@ -93,7 +116,6 @@ def infer_target_column(df, task_type=None):
         for col in df.select_dtypes(include=['int64', 'float64']).columns:
             if df[col].nunique() <= 20:
                 return col
-
     elif task_type == "regression":
         # Для регрессии выбираем числовой столбец с большим числом уникальных значений
         for col in df.select_dtypes(include=['int64', 'float64']).columns:
@@ -109,10 +131,10 @@ def infer_target_column(df, task_type=None):
     logging.warning("Не удалось вывести целевой столбец")
     return None  # Если не удалось выбрать целевой столбец
 
+
 def infer_task_type(df, target_column):
     """
     Определяет тип задачи на основе целевого столбца.
-
     :param df: DataFrame с данными.
     :param target_column: Название целевого столбца.
     :return: Тип задачи ('classification', 'regression' или 'clustering').
@@ -121,6 +143,7 @@ def infer_task_type(df, target_column):
         return "clustering"
 
     target = df[target_column]
+
     if target.dtype == 'object':
         return "classification"
     elif pd.api.types.is_integer_dtype(target) and target.nunique() <= 20:
@@ -130,10 +153,10 @@ def infer_task_type(df, target_column):
     else:
         raise ValueError("Не удалось определить тип задачи")
 
+
 def select_model(task_type, n_estimators=100, n_clusters=3):
     """
     Выбирает модель в зависимости от типа задачи.
-
     :param task_type: Тип задачи ('classification', 'regression' или 'clustering').
     :param n_estimators: Количество деревьев для RandomForest.
     :param n_clusters: Количество кластеров для KMeans.
@@ -148,10 +171,10 @@ def select_model(task_type, n_estimators=100, n_clusters=3):
     else:
         raise ValueError("Неподдерживаемая задача")
 
+
 def train_and_evaluate(df, target_column, task_type, n_estimators=100, n_clusters=3):
     """
     Обучает модель и оценивает её качество.
-
     :param df: DataFrame с данными.
     :param target_column: Название целевого столбца.
     :param task_type: Тип задачи ('classification' или 'regression').
@@ -159,31 +182,32 @@ def train_and_evaluate(df, target_column, task_type, n_estimators=100, n_cluster
     :param n_clusters: Количество кластеров для KMeans.
     :return: Обученная модель и метрика качества.
     """
-    df = df.dropna(subset=[target_column])
     X = df.drop(columns=[target_column])
     y = df[target_column]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    if len(X) < 2:
+        raise ValueError("Недостаточно данных для разделения на train/test.")
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     model = select_model(task_type, n_estimators, n_clusters)
     model.fit(X_train, y_train)
-
     y_pred = model.predict(X_test)
 
     if task_type == "classification":
         metric = accuracy_score(y_test, y_pred)
     elif task_type == "regression":
-        metric = mean_squared_error(y_test, y_pred)
+        metric = mean_squared_error(y_test, y_pred, squared=False)  # RMSE
     else:
         metric = None
 
     logging.info(f"Модель обучена и оценена. Метрики: {metric}")
     return model, metric
 
+
 def save_model(model, filename="model", format="joblib"):
     """
     Сохраняет обученную модель в файл в выбранном формате.
-
     :param model: Обученная модель.
     :param filename: Имя файла для сохранения модели.
     :param format: Формат сохранения модели ('pkl', 'joblib').
@@ -195,54 +219,5 @@ def save_model(model, filename="model", format="joblib"):
         joblib.dump(model, f"{filename}.joblib")
     else:
         raise ValueError("Неподдерживаемый формат сохранения модели")
+
     logging.info(f"Модель сохранена как {filename}.{format}")
-
-def main(data_source, save_format, n_estimators, n_clusters):
-    df = load_data(data_source)
-
-    if df is not None:
-        logging.info("Данные загружены:\n" + str(df.head()))
-
-        # Автоматически определяем целевой столбец
-        target_column = infer_target_column(df)
-        logging.info(f"Обнаружен целевой столбец: {target_column}")
-
-        # Определяем тип задачи
-        task_type = infer_task_type(df, target_column)
-        logging.info(f"Тип задачи обнаружен: {task_type}")
-
-        # Выводим дополнительные данные о целевой переменной
-        if target_column:
-            unique_values = df[target_column].nunique()  # Количество уникальных значений
-            logging.info("Тип задачи определён автоматически: " + task_type)
-            logging.info("Уникальные значения в целевой переменной: " + str(unique_values))
-            logging.info("Тип целевой переменной: " + str(df[target_column].dtype))
-
-            # Предобработка данных
-            df = preprocess_data(df, target_column)
-            logging.info("Данные после предварительной обработки:\n" + str(df.head()))
-
-            # Обучение и оценка модели
-            model, metric = train_and_evaluate(df, target_column, task_type, n_estimators, n_clusters)
-            logging.info(f"Метрики модели {metric}")
-        else:
-            # Если целевая переменная не найдена, выполняем кластеризацию
-            df = preprocess_data(df, df.columns[-1])
-            model = select_model(task_type, n_estimators, n_clusters)
-            model.fit(df)
-            logging.info("Кластеризация завершена.")
-
-        # Сохранение модели в выбранном формате
-        save_model(model, format=save_format)
-        logging.info(f"Модель сохранена как model.{save_format}")
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AutoML Script")
-    parser.add_argument("--data_source", type=str, default="https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv", help="URL or path to the dataset")
-    parser.add_argument("--save_format", type=str, choices=["pkl", "joblib"], default="joblib", help="Format to save the model")
-    parser.add_argument("--n_estimators", type=int, default=100, help="Number of trees in the RandomForest")
-    parser.add_argument("--n_clusters", type=int, default=3, help="Number of clusters for KMeans")
-
-    args = parser.parse_args()
-
-    main(args.data_source, args.save_format, args.n_estimators, args.n_clusters)
