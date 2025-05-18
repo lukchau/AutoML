@@ -13,53 +13,89 @@ import pickle
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
-def validate_data(df: pd.DataFrame, target_column: str):
+def is_id_like(col_name):
+    """Проверяет, является ли столбец ID-подобным"""
+    id_keywords = ['id', 'name', 'ticket', 'cabin', 'key', 'identifier']
+    return any(keyword in str(col_name).lower() for keyword in id_keywords)
+
+
+def infer_target_column(df: pd.DataFrame, task_type=None):
     """
-    Выполняет базовые проверки качества данных.
-    :param df: DataFrame с данными.
-    :param target_column: Целевая переменная.
-    :raises ValueError: Если данные не проходят валидацию.
+    Автоматически определяет целевой столбец на основе типа задачи или предположений.
     """
-    if df.empty:
-        raise ValueError("Датасет пуст.")
 
-    if target_column not in df.columns:
-        raise ValueError(f"Целевой столбец '{target_column}' отсутствует в данных.")
+    # Список приоритетных колонок по типу задачи
+    target_candidates = {
+        'classification': ['survived', 'target', 'y', 'class', 'label'],
+        'regression': ['fare', 'age', 'price', 'income', 'sales']
+    }
 
-    if df.shape[1] < 2:
-        raise ValueError("Недостаточно признаков для обучения модели.")
+    if task_type and task_type in target_candidates:
+        for candidate in target_candidates[task_type]:
+            if candidate in df.columns.str.lower():
+                idx = df.columns.tolist().index(df.columns[df.columns.str.lower() == candidate][0])
+                logger.info(f"Найден приоритетный таргет: {df.columns[idx]}")
+                return df.columns[idx]
 
-    unique_target_values = df[target_column].nunique()
+    # Проверка на наличие бинарных столбцов
+    for col in df.select_dtypes(include=['int64', 'float64']).columns:
+        if not is_id_like(col) and df[col].nunique() == 2:
+            logger.info(f"Выбран бинарный целевой столбец: {col}")
+            return col
 
-    if unique_target_values < 2:
-        raise ValueError(f"Целевая переменная содержит только одно уникальное значение: {df[target_column].iloc[0]}")
+    # Для классификации: категориальные или числовые с малым числом уникальных значений
+    if task_type == "classification":
+        for col in df.select_dtypes(include=['object']).columns:
+            if not is_id_like(col) and df[col].nunique() < len(df) * 0.5:
+                logger.info(f"Выбран целевой столбец: {col}")
+                return col
+        for col in df.select_dtypes(include=['int64', 'float64']).columns:
+            if not is_id_like(col) and df[col].nunique() <= 20:
+                logger.info(f"Выбран числовой целевой столбец: {col}")
+                return col
 
-    logging.info(f"Валидация успешна. Уникальных значений в таргете: {unique_target_values}")
+    # Для регрессии: числовой с высокой вариативностью
+    elif task_type == "regression":
+        for col in df.select_dtypes(include=['int64', 'float64']).columns:
+            if not is_id_like(col) and df[col].nunique() > 20:
+                logger.info(f"Выбран числовой целевой столбец (регрессия): {col}")
+                return col
+
+    # Если task_type не задан
+    else:
+        for col in df.columns:
+            if not is_id_like(col):
+                if df[col].dtype == 'object' and df[col].nunique() < len(df) * 0.5:
+                    logger.info(f"Автоматически выбран целевой столбец: {col}")
+                    return col
+                elif pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() > 20:
+                    logger.info(f"Автоматически выбран числовой целевой столбец: {col}")
+                    return col
+
+    logger.warning("Не удалось вывести целевой столбец")
+    return None
 
 
 def load_data(file_path):
     """
     Загружает данные из файла или URL.
     :param file_path: Путь к файлу или URL.
-    :return: DataFrame с загруженными данными или None в случае ошибки.
+    :return: DataFrame с данными или None в случае ошибки.
     """
     try:
         if file_path.startswith("http://") or file_path.startswith("https://"):
-            # Если путь является URL
             response = requests.get(file_path)
             response.raise_for_status()
 
-            # Создаем временный файл для хранения данных
             ext = ".csv" if ".csv" in file_path else ".xlsx"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
             tmp.write(response.content)
             tmp.close()
-
             file_path = tmp.name
 
-        # Загрузка данных из файла
         if file_path.endswith('.csv'):
             df = pd.read_csv(file_path)
         elif file_path.endswith(('.xls', '.xlsx')):
@@ -67,28 +103,23 @@ def load_data(file_path):
         else:
             raise ValueError("Неверный формат файла")
 
-        logging.info("Данные были загружены успешно.")
+        logger.info("Данные были загружены успешно.")
         return df
 
     except Exception as e:
-        logging.error(f"Ошибка при загрузке данных: {e}")
+        logger.error(f"Ошибка при загрузке данных: {e}")
         return None
 
 
-def preprocess_data(df, target_column):
+def preprocess_data(df: pd.DataFrame, target_column: str):
     """
-    Предобрабатывает данные: удаляет NaN, кодирует категориальные признаки и нормализует числовые.
-    :param df: DataFrame с исходными данными.
-    :param target_column: Название целевого столбца.
-    :return: DataFrame с предобработанными данными.
+    Предобрабатывает данные: удаляет NaN, кодирует категориальные признаки, нормализует числовые.
     """
-    df = df.dropna(axis=0).copy()  # Удаляем строки с NaN и избегаем SettingWithCopyWarning
-
-    # Отдельно сохраняем целевой столбец
-    target = df[target_column]
+    if df[target_column].isna().any():
+        df = df.dropna(subset=[target_column]).copy()
     features = df.drop(columns=[target_column])
 
-    # Кодируем категориальные признаки (только признаки, не target)
+    # Кодируем категориальные признаки
     for col in features.select_dtypes(include=['object']).columns:
         features.loc[:, col] = LabelEncoder().fit_transform(features[col])
 
@@ -96,54 +127,20 @@ def preprocess_data(df, target_column):
     numeric_cols = features.select_dtypes(include=['int64', 'float64']).columns
     features[numeric_cols] = StandardScaler().fit_transform(features[numeric_cols])
 
-    # Объединяем обратно признаки и целевую переменную
-    df_processed = pd.concat([features, target.reset_index(drop=True)], axis=1)
-    logging.info("Данные успешно обработаны.")
+    # Объединяем обратно
+    df_processed = pd.concat([features, df[[target_column]].reset_index(drop=True)], axis=1)
+    logger.info("Данные успешно обработаны.")
     return df_processed
 
 
-def infer_target_column(df, task_type=None):
+def infer_task_type(df: pd.DataFrame, target_column: str):
     """
-    Определяет целевой столбец на основе типа задачи или предположений.
-    :param df: DataFrame с данными.
-    :param task_type: Тип задачи ('classification' или 'regression').
-    :return: Название целевого столбца или None, если не удалось определить.
-    """
-    if task_type == "classification":
-        # Для классификации выбираем категориальный столбец или числовой с небольшим числом уникальных значений
-        for col in df.select_dtypes(include=['object']).columns:
-            return col
-        for col in df.select_dtypes(include=['int64', 'float64']).columns:
-            if df[col].nunique() <= 20:
-                return col
-    elif task_type == "regression":
-        # Для регрессии выбираем числовой столбец с большим числом уникальных значений
-        for col in df.select_dtypes(include=['int64', 'float64']).columns:
-            return col
-
-    # Если task_type не задан, пробуем выбрать столбец, исходя из предположений
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            return col  # Возвращаем первый категориальный столбец для классификации
-        elif df[col].dtype in ['int64', 'float64'] and df[col].nunique() > 20:
-            return col  # Возвращаем первый числовой столбец для регрессии
-
-    logging.warning("Не удалось вывести целевой столбец")
-    return None  # Если не удалось выбрать целевой столбец
-
-
-def infer_task_type(df, target_column):
-    """
-    Определяет тип задачи на основе целевого столбца.
-    :param df: DataFrame с данными.
-    :param target_column: Название целевого столбца.
-    :return: Тип задачи ('classification', 'regression' или 'clustering').
+    Определяет тип задачи автоматически.
     """
     if target_column is None or target_column not in df.columns:
         return "clustering"
 
     target = df[target_column]
-
     if target.dtype == 'object':
         return "classification"
     elif pd.api.types.is_integer_dtype(target) and target.nunique() <= 20:
@@ -154,13 +151,9 @@ def infer_task_type(df, target_column):
         raise ValueError("Не удалось определить тип задачи")
 
 
-def select_model(task_type, n_estimators=100, n_clusters=3):
+def select_model(task_type: str, n_estimators: int = 100, n_clusters: int = 3):
     """
     Выбирает модель в зависимости от типа задачи.
-    :param task_type: Тип задачи ('classification', 'regression' или 'clustering').
-    :param n_estimators: Количество деревьев для RandomForest.
-    :param n_clusters: Количество кластеров для KMeans.
-    :return: Модель для задачи.
     """
     if task_type == "classification":
         return RandomForestClassifier(n_estimators=n_estimators)
@@ -172,16 +165,31 @@ def select_model(task_type, n_estimators=100, n_clusters=3):
         raise ValueError("Неподдерживаемая задача")
 
 
-def train_and_evaluate(df, target_column, task_type, n_estimators=100, n_clusters=3):
+def validate_data(df: pd.DataFrame, target_column: str):
+    """
+    Проверяет данные перед обучением.
+    """
+    if df.empty:
+        raise ValueError("Датасет пуст.")
+
+    if target_column not in df.columns:
+        raise ValueError(f"Целевой столбец '{target_column}' отсутствует в данных.")
+
+    if df.shape[1] < 2:
+        raise ValueError("Недостаточно признаков для обучения модели.")
+
+    unique_values = df[target_column].nunique()
+    if unique_values < 2:
+        raise ValueError(f"Целевая переменная содержит только одно уникальное значение: {df[target_column].iloc[0]}")
+
+    logger.info(f"Валидация успешна. Уникальных значений в таргете: {unique_values}")
+
+
+def train_and_evaluate(df: pd.DataFrame, target_column: str, task_type: str, n_estimators: int = 100, n_clusters: int = 3):
     """
     Обучает модель и оценивает её качество.
-    :param df: DataFrame с данными.
-    :param target_column: Название целевого столбца.
-    :param task_type: Тип задачи ('classification' или 'regression').
-    :param n_estimators: Количество деревьев для RandomForest.
-    :param n_clusters: Количество кластеров для KMeans.
-    :return: Обученная модель и метрика качества.
     """
+    df = df.dropna(subset=[target_column]).copy()
     X = df.drop(columns=[target_column])
     y = df[target_column]
 
@@ -189,6 +197,9 @@ def train_and_evaluate(df, target_column, task_type, n_estimators=100, n_cluster
         raise ValueError("Недостаточно данных для разделения на train/test.")
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    if y_train.isna().any():
+        raise ValueError("Целевая переменная содержит NaN значения.")
 
     model = select_model(task_type, n_estimators, n_clusters)
     model.fit(X_train, y_train)
@@ -201,16 +212,13 @@ def train_and_evaluate(df, target_column, task_type, n_estimators=100, n_cluster
     else:
         metric = None
 
-    logging.info(f"Модель обучена и оценена. Метрики: {metric}")
+    logger.info(f"Модель обучена и оценена. Метрики: {metric}")
     return model, metric
 
 
 def save_model(model, filename="model", format="joblib"):
     """
     Сохраняет обученную модель в файл в выбранном формате.
-    :param model: Обученная модель.
-    :param filename: Имя файла для сохранения модели.
-    :param format: Формат сохранения модели ('pkl', 'joblib').
     """
     if format == "pkl":
         with open(f"{filename}.pkl", "wb") as f:
@@ -220,4 +228,4 @@ def save_model(model, filename="model", format="joblib"):
     else:
         raise ValueError("Неподдерживаемый формат сохранения модели")
 
-    logging.info(f"Модель сохранена как {filename}.{format}")
+    logger.info(f"Модель сохранена как {filename}.{format}")

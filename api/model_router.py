@@ -3,6 +3,10 @@ from fastapi.responses import FileResponse
 import logging
 import os
 import pandas as pd
+import sys
+
+# Добавляем корень проекта в путь импорта
+sys.path.append(os.path.abspath(".."))
 
 from AutoML.testScript import (
     load_data,
@@ -10,8 +14,8 @@ from AutoML.testScript import (
     infer_target_column,
     infer_task_type,
     train_and_evaluate,
-    save_model,
-    validate_data  
+    validate_data,
+    save_model
 )
 
 # Настройка логирования
@@ -34,7 +38,7 @@ async def train_model(
 ):
     """Обучает модель на основе загруженного датасета.
     """
-    # Проверка токена 
+    # Проверка токена
     if not token:
         raise HTTPException(status_code=401, detail="Пользователь не авторизован")
 
