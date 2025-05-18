@@ -3,7 +3,7 @@ import sys
 import os
 
 # Добавляем корень проекта в путь импорта
-sys.path.append(os.path.abspath(".."))
+sys.path.append(os.path.abspath(""))
 
 from AutoML.testScript import (
     load_data,

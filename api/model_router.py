@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Cookie, HTTPException, Request
+from io import StringIO
+
+from fastapi import (
+    APIRouter,
+    Cookie,
+    HTTPException,
+    Request,
+    UploadFile,
+    File,
+)
 from fastapi.responses import FileResponse
 import logging
 import os
 import pandas as pd
 import sys
-
-# Добавляем корень проекта в путь импорта
-sys.path.append(os.path.abspath(".."))
-
+from schemas.user import UserJWT
+from api.helpers import decode_access_token
 from AutoML.testScript import (
     load_data,
     preprocess_data,
@@ -28,24 +35,19 @@ router = APIRouter(prefix="/model", tags=["Model"])
 trained_model = None
 metrics = None
 model_format = "joblib"
-TEMP_DATA_PATH = "data.csv"  # Файл загружается заранее
 
 
 @router.post("/train")
 async def train_model(
-    request: Request,
-    token: str = Cookie(None, alias="users_access_token"),
+        file: UploadFile = File(...),
+        token: str = Cookie(None, alias="users_access_token"),
 ):
-    """Обучает модель на основе загруженного датасета.
-    """
-    # Проверка токена
+    """Обучает модель на основе загруженного датасета"""
+    # Проверка авторизации
     if not token:
         raise HTTPException(status_code=401, detail="Пользователь не авторизован")
 
     try:
-        from schemas.user import UserJWT
-        from api.helpers import decode_access_token
-
         user_data = decode_access_token(token)
         user = UserJWT(**user_data)
         logger.info(f"Пользователь {user.id} запрашивает обучение модели.")
@@ -53,37 +55,56 @@ async def train_model(
         logger.error(f"Ошибка декодирования токена: {e}")
         raise HTTPException(status_code=401, detail="Неверный токен")
 
-    # Проверяем наличие файла с данными
-    if not os.path.exists(TEMP_DATA_PATH):
-        raise HTTPException(status_code=400, detail="Файл с данными не найден. Загрузите данные сначала.")
+    # Проверка типа файла
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Только CSV-файлы поддерживаются")
 
-    # Загружаем данные
-    df = pd.read_csv(TEMP_DATA_PATH)
-    target_column = infer_target_column(df)
-
-    if not target_column:
-        raise HTTPException(status_code=400, detail="Не удалось определить целевой столбец")
-
-    task_type = infer_task_type(df, target_column)
-    logger.info(f"Определён тип задачи: {task_type}")
-
-    # Валидацию данных
     try:
+        # Чтение файла с обработкой ошибок
+        contents = await file.read()
+
+        try:
+            # Декодируем содержимое как UTF-8 (можно добавить другие кодировки)
+            decoded_content = contents.decode('utf-8')
+            df = pd.read_csv(StringIO(decoded_content))
+        except UnicodeDecodeError:
+            # Попробуем другие кодировки при необходимости
+            raise HTTPException(status_code=400, detail="Неподдерживаемая кодировка файла")
+
+    except Exception as e:
+        logger.error(f"Ошибка чтения файла: {e}")
+        raise HTTPException(status_code=400, detail="Ошибка обработки файла")
+
+    # Анализ данных
+    try:
+        target_column = infer_target_column(df)
+        if not target_column:
+            raise HTTPException(status_code=400, detail="Не удалось определить целевой столбец")
+
+        task_type = infer_task_type(df, target_column)
+        logger.info(f"Определён тип задачи: {task_type}")
+
+        # Валидация данных
         validate_data(df, target_column)
-    except ValueError as ve:
-        logger.warning(f"Ошибка валидации данных: {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
+        df_processed = preprocess_data(df, target_column)
 
-    # Обрабатываем данные
-    df_processed = preprocess_data(df, target_column)
-
-    # Обучаем модель
-    global trained_model, metrics, model_format
-    try:
+        # Обучение модели
+        global trained_model, metrics, model_format
         trained_model, metrics = train_and_evaluate(df_processed, target_column, task_type)
         save_model(trained_model, format=model_format)
         logger.info("Модель успешно обучена и сохранена.")
-        return {"success": True, "message": "Модель обучена", "metric": metrics}
+
+        return {
+            "success": True,
+            "message": "Модель обучена",
+            "metrics": metrics,
+            "target": target_column,
+            "task_type": task_type
+        }
+
+    except ValueError as ve:
+        logger.warning(f"Ошибка валидации данных: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Ошибка обучения модели: {e}")
         raise HTTPException(status_code=500, detail="Ошибка обучения модели")

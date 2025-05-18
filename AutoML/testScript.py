@@ -10,6 +10,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error
 import joblib
 import pickle
+import numpy as np
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -208,7 +210,8 @@ def train_and_evaluate(df: pd.DataFrame, target_column: str, task_type: str, n_e
     if task_type == "classification":
         metric = accuracy_score(y_test, y_pred)
     elif task_type == "regression":
-        metric = mean_squared_error(y_test, y_pred, squared=False)  # RMSE
+        mse = mean_squared_error(y_test, y_pred)
+        metric = np.sqrt(mse)  # RMSE
     else:
         metric = None
 

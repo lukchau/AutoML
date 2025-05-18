@@ -4,18 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Результаты</title>
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f5f5f5; padding: 20px; border-radius: 5px; }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .metric-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Результаты обучения модели</h1>
-        <p id="predictions">Предсказания: ...</p>
-        <p id="metrics">Метрики точности: ...</p>
+
+        <div id="metrics-container">
+            <h3>Метрика точности:</h3>
+            <p class="metric-value" id="metrics-value">...</p>
+        </div>
+
+        <p>Целевой столбец: <strong id="target-value">...</strong></p>
+        <p>Тип задачи: <strong id="task-type-value">...</strong></p>
 
         <a href="/model/download" class="btn">Скачать модель</a>
-
-        <a href="upload.html" class="btn">Попробовать другую модель</a>
+        <a href="upload.html" class="btn">Обучить еще одну модель</a>
     </div>
-    <script src="script.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            if (urlParams.has('metrics')) {
+                // Получаем метрику (просто число)
+                const metricsValue = urlParams.get('metrics');
+                document.getElementById('metrics-value').textContent = metricsValue;
+
+                // Остальные параметры
+                document.getElementById('target-value').textContent = urlParams.get('target');
+                document.getElementById('task-type-value').textContent = urlParams.get('task_type');
+            } else {
+                document.querySelector('.container').innerHTML = `
+                    <h2>Данные не получены</h2>
+                    <p>Пожалуйста, начните с <a href="upload.html">загрузки данных</a></p>
+                    <a href="upload.html" class="btn">Обучить модель</a>
+                `;
+            }
+        });
+    </script>
 </body>
 </html>

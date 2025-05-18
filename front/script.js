@@ -132,18 +132,43 @@ document.getElementById('uploadForm')?.addEventListener('submit', async function
     event.preventDefault();
 
     const fileInput = document.getElementById('dataFile');
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
+    const submitButton = event.target.querySelector('button[type="submit"]');
 
-    const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-    });
+    submitButton.disabled = true;
+    submitButton.textContent = 'Загрузка...';
 
-    if (response.ok) {
-        window.location.href = 'model_selection.html'; // Переход на страницу выбора модели
-    } else {
-        alert('Ошибка загрузки файла');
+    try {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        const response = await fetch('http://localhost:8080/model/train', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Ошибка сервера');
+        }
+
+        const result = await response.json();
+
+        // Передаем данные через URL - для числа не нужно JSON.stringify
+        const params = new URLSearchParams({
+            metrics: result.metrics,  // Просто число
+            target: result.target,
+            task_type: result.task_type
+        });
+
+        window.location.href = `results.html?${params.toString()}`;
+
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert(`Ошибка: ${error.message}`);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Загрузить';
     }
 });
 
