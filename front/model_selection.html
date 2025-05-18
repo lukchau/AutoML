@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выбор модели</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Выберите модель</h1>
+        <form id="modelSelectionForm">
+            <label for="task">Выберите задачу:</label>
+            <select id="task" required>
+                <option value="">--Выберите--</option>
+                <option value="classification">Классификация</option>
+                <option value="regression">Регрессия</option>
+                <option value="clustering">Кластеризация</option>
+            </select>
+
+            <!-- Здесь можно добавить дополнительные параметры модели -->
+            
+            <button type="submit">Обучить модель</button>
+        </form>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
