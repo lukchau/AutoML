@@ -1,1 +1,24 @@
+# Окружение
 .env
+.env.local
+*.env
+*.env.*
+!.env.example
+
+# Исходные данные и модели
+/data.csv
+/model.pkl
+/model.joblib
+/tests/*.pkl
+/tests/*.joblib
+/AutoML/*.pkl
+/AutoML/*.joblib
+
+# Временные файлы Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyc
+*.py~
+*.pyc*
